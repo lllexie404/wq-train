@@ -128,7 +128,7 @@ var PROG='wq_train_prog_v1';var prog={};
 function loadProg(){try{var s=localStorage.getItem(PROG);if(s)prog=JSON.parse(s)||{}}catch(e){prog={}}if(!prog||typeof prog!=='object')prog={}}
 function saveProg(){try{localStorage.setItem(PROG,JSON.stringify(prog))}catch(e){}}
 loadProg();
-function saveSession(){if(!session||!session.key)return;prog[session.key]={qids:session.qids,i:session.i,sel:session.sel.slice(),answered:session.answered,lastOk:session.lastOk,r:session.r,w:session.w,title:session.title,cat:session.cat||null};saveProg()}
+function saveSession(){if(!session||!session.key)return;prog[session.key]={qids:session.qids,i:session.i,sel:session.sel.slice(),answered:session.answered,lastOk:session.lastOk,r:session.r,w:session.w,title:session.title,cat:session.cat||null,type:session.type||null};saveProg()}
 function clearSession(key){try{if(key&&prog[key]){delete prog[key];saveProg()}}catch(e){}}
 function isSusp(key){var p=prog[key];return !!(p&&p.qids&&p.qids.length&&p.i<p.qids.length&&(p.i>0||p.answered))}
 
@@ -143,6 +143,7 @@ function wrongList(cat){return DATA.filter(function(q){var r=store[q.id];return 
 
 var session=null;
 var curCat=null;
+var curWrong=false;
 var app=document.getElementById('app');
 
 function orderQueue(qs){return qs.slice().sort(function(a,b){return rank(a)-rank(b)});
@@ -203,6 +204,26 @@ function viewTypePick(cat){
   return h;
 }
 
+/* ---------- 错题重练：按题型选择 ---------- */
+function viewWrongPick(){
+  var h='';
+  h+='<div class="qhead"><button class="bk" data-act="backHome">‹</button>'
+    +'<div class="qt"><div class="t1">错题重练</div><div class="t2">选择题型开始练习</div></div></div>';
+  var all=wrongList(null),any=false;
+  TYPES.forEach(function(tp){
+    var n=all.filter(function(q){return q.qtype===tp}).length;
+    if(!n)return;any=true;
+    var cont=isSusp('wrong:'+tp)?'<i class="cont">继续</i>':'';
+    h+='<div class="cat" data-act="openWrongKp" data-type="'+esc(tp)+'">'
+      +'<div class="ico">'+esc(tp.charAt(0))+'</div>'
+      +'<div class="mid"><div class="nm">'+esc(tp)+cont+'</div>'
+      +'<div class="mini"><small>共 '+n+' 题待重练</small></div></div>'
+      +'<div class="arw">›</div></div>';
+  });
+  if(!any)h+='<div class="empty">暂无错题，继续保持！</div>';
+  return h;
+}
+
 /* ---------- 答题页 ---------- */
 function viewQuiz(){
   if(session.i>=session.qids.length) return viewResult();
@@ -258,25 +279,27 @@ function viewResult(){
 
 function render(){try{
   if(session)app.innerHTML=viewQuiz();
+  else if(curWrong)app.innerHTML=viewWrongPick();
   else if(curCat)app.innerHTML=viewTypePick(curCat);
   else app.innerHTML=viewHome();
   window.scrollTo(0,0);}catch(e){showSysErr(e&&e.message?e.message:e);}
 }
 
 /* ---------- 交互 ---------- */
-function startSession(qids,title,key,cat){
+function startSession(qids,title,key,cat,type){
   if(!qids.length){alert('暂无题目');return}
-  session={key:key||null,qids:qids,title:title,cat:(cat===undefined?null:cat),i:0,sel:[],answered:false,lastOk:false,r:0,w:0};
+  session={key:key||null,qids:qids,title:title,cat:(cat===undefined?null:cat),type:type||null,i:0,sel:[],answered:false,lastOk:false,r:0,w:0};
   saveSession();render();
 }
-function resumeSession(key){var p=prog[key];if(!p)return;session={key:key,qids:p.qids,title:p.title||'练习',cat:p.cat||null,i:p.i||0,sel:(p.sel||[]).slice(),answered:!!p.answered,lastOk:!!p.lastOk,r:p.r||0,w:p.w||0};render()}
-function openModule(key,title,qids,cat){
-  if(isSusp(key)){showChoice('继续上次练习？','「'+title+'」上次练到第 '+((prog[key].i||0)+1)+' / '+prog[key].qids.length+' 题。','继续答题','重新开始',function(){resumeSession(key)},function(){clearSession(key);startSession(qids,title,key,cat)});return}
-  startSession(qids,title,key,cat);
+function resumeSession(key){var p=prog[key];if(!p)return;session={key:key,qids:p.qids,title:p.title||'练习',cat:p.cat||null,type:p.type||null,i:p.i||0,sel:(p.sel||[]).slice(),answered:!!p.answered,lastOk:!!p.lastOk,r:p.r||0,w:p.w||0};render()}
+function openModule(key,title,qids,cat,type){
+  if(isSusp(key)){showChoice('继续上次练习？','「'+title+'」上次练到第 '+((prog[key].i||0)+1)+' / '+prog[key].qids.length+' 题。','继续答题','重新开始',function(){resumeSession(key)},function(){clearSession(key);startSession(qids,title,key,cat,type)});return}
+  startSession(qids,title,key,cat,type);
 }
-function openCat(c){curCat=c;render()}
-function openKp(cat,type){var key='kp:'+cat+'|'+type;openModule(key,cat+' · '+type,orderQueue(qsIn(cat,type)).map(function(q){return q.id}),cat)}
-function openWrong(){var w=wrongList(null).map(function(q){return q.id});startSession(w,'错题重练',null,null)}
+function openCat(c){curWrong=false;curCat=c;render()}
+function openKp(cat,type){var key='kp:'+cat+'|'+type;openModule(key,cat+' · '+type,orderQueue(qsIn(cat,type)).map(function(q){return q.id}),cat,type)}
+function openWrong(){curCat=null;curWrong=true;render()}
+function openWrongKp(type){var key='wrong:'+type;var qs=wrongList(null).filter(function(q){return q.qtype===type});openModule(key,'错题重练 · '+type,orderQueue(qs).map(function(q){return q.id}),null,type)}
 function doAnswer(){
   var q=QMAP[session.qids[session.i]];
   if(!q||session.answered||session.sel.length===0)return;
@@ -295,6 +318,8 @@ app.addEventListener('click',function(e){
   if(act==='openKp'){openKp(t.getAttribute('data-cat'),t.getAttribute('data-type'));return}
   if(act==='backTypes'){curCat=null;render();return}
   if(act==='wrongSet'){openWrong();return}
+  if(act==='openWrongKp'){openWrongKp(t.getAttribute('data-type'));return}
+  if(act==='backHome'){curWrong=false;curCat=null;render();return}
   if(act==='back'){session=null;render();return}
   if(act==='opt'){
     if(!session||session.answered)return;
@@ -309,12 +334,12 @@ app.addEventListener('click',function(e){
   if(act==='submit'){doAnswer();return}
   if(act==='next'){session.i++;session.sel=[];session.answered=false;if(session.key&&session.i>=session.qids.length)clearSession(session.key);else saveSession();render();return}
   if(act==='retryWrong'){
-    var w=wrongList(session.cat).map(function(q){return q.id});
-    var title=session.cat?session.cat+' · 错题重练':'错题重练';
-    startSession(w,title,null,session.cat);return;
+    var w=wrongList(session.cat).filter(function(q){return !session.type||q.qtype===session.type}).map(function(q){return q.id});
+    var title=(session.cat?session.cat+' · ':'')+(session.type?session.type+' · ':'')+'错题重练';
+    startSession(w,title,null,session.cat,session.type);return;
   }
   if(act==='reset'){
-    showConfirm('确认重置进度？','将清空所有答题记录与错题统计，且无法恢复。',function(){store={};saveStore();prog={};saveProg();session=null;render()});
+    showConfirm('确认重置进度？','将清空所有答题记录与错题统计，且无法恢复。',function(){store={};saveStore();prog={};saveProg();session=null;curWrong=false;curCat=null;render()});
     return;
   }
 });
